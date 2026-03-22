@@ -1,0 +1,199 @@
+import requests
+import pandas as pd
+from sqlalchemy import create_engine, text
+import time
+import json
+from datetime import datetime, timedelta
+from concurrent.futures import ThreadPoolExecutor, as_completed
+from calendar import monthrange
+import os
+
+# ================================
+# CONFIGURAÇÕES
+# ================================
+API_BASE = "https://api.sigecloud.com.br/request/Pedidos/Pesquisar"
+EMPRESAS = ["PDV ITZ 01", "PDV ITZ 02", "PDV ITZ 03", "PDV ITZ 04"]
+
+HEADERS = {
+    "Authorization-Token": os.getenv("API_TOKEN"),
+    "User": os.getenv("API_USER"),
+    "App": "API"
+}
+
+# ================================
+# CONEXÃO POSTGRESQL (SUPABASE)
+# ================================
+engine = create_engine(
+    f"postgresql+psycopg2://{os.getenv('DB_USER')}:{os.getenv('DB_PASS')}@{os.getenv('DB_HOST')}:{os.getenv('DB_PORT','5432')}/{os.getenv('DB_NAME','postgres')}"
+)
+
+# ================================
+# FUNÇÕES
+# ================================
+def testar_token():
+    params = {
+        "dataInicial": "2025-01-01",
+        "filtrarPor": "DataFaturamentoPedido",
+        "empresa": EMPRESAS[0],
+        "pagina": 1,
+        "limite": 1
+    }
+    resp = requests.get(API_BASE, headers=HEADERS, params=params, timeout=30)
+    return resp.status_code == 200
+
+
+def criar_tabela_se_nao_existe():
+    query = """
+    CREATE TABLE IF NOT EXISTS pedidos (
+        "ID" TEXT PRIMARY KEY,
+        "Empresa" TEXT
+    );
+    """
+    with engine.begin() as conn:
+        conn.execute(text(query))
+
+
+def coletar_pedidos_intervalo(start, end, empresa):
+    df_total = pd.DataFrame()
+    pagina = 1
+    limite = 1000
+
+    while True:
+        params = {
+            "dataInicial": start.strftime("%Y-%m-%dT%H:%M:%S"),
+            "dataFinal": end.strftime("%Y-%m-%dT%H:%M:%S"),
+            "filtrarPor": "DataFaturamentoPedido",
+            "empresa": empresa,
+            "pagina": pagina,
+            "limite": limite
+        }
+
+        resp = requests.get(API_BASE, headers=HEADERS, params=params, timeout=180)
+        if resp.status_code != 200:
+            break
+
+        dados = resp.json()
+
+        if isinstance(dados, dict):
+            df = pd.DataFrame(dados.get("data") or dados.get("dados") or dados.get("result") or [])
+        elif isinstance(dados, list):
+            df = pd.DataFrame(dados)
+        else:
+            df = pd.DataFrame()
+
+        if df.empty:
+            break
+
+        # tratar JSON
+        col_complex = [c for c in df.columns if df[c].apply(lambda x: isinstance(x, (dict, list))).any()]
+        for c in col_complex:
+            df[c] = df[c].apply(lambda x: json.dumps(x) if x is not None else None)
+
+        df_total = pd.concat([df_total, df], ignore_index=True)
+
+        if len(df) < limite:
+            break
+
+        pagina += 1
+        time.sleep(0.1)
+
+    return df_total
+
+
+def coletar_pedidos_dia(dia, empresa):
+    df_dia = pd.DataFrame()
+    hora_inicio = datetime(dia.year, dia.month, dia.day)
+
+    while hora_inicio < datetime(dia.year, dia.month, dia.day, 23, 59, 59):
+        hora_fim = min(hora_inicio + timedelta(hours=1), datetime(dia.year, dia.month, dia.day, 23, 59, 59))
+        df = coletar_pedidos_intervalo(hora_inicio, hora_fim, empresa)
+
+        if not df.empty:
+            df_dia = pd.concat([df_dia, df], ignore_index=True)
+
+        hora_inicio = hora_fim + timedelta(seconds=1)
+
+    if "ID" in df_dia.columns:
+        df_dia = df_dia.drop_duplicates(subset=["ID"])
+
+    return df_dia
+
+
+def coletar_mes(ano, mes, empresa, max_workers=5):
+    ultimo_dia = monthrange(ano, mes)[1]
+    dias = [datetime(ano, mes, d) for d in range(1, ultimo_dia + 1)]
+    df_total = pd.DataFrame()
+
+    with ThreadPoolExecutor(max_workers=max_workers) as executor:
+        futures = [executor.submit(coletar_pedidos_dia, dia, empresa) for dia in dias]
+
+        for future in as_completed(futures):
+            df = future.result()
+            if not df.empty:
+                df_total = pd.concat([df_total, df], ignore_index=True)
+
+    if "ID" in df_total.columns:
+        df_total = df_total.drop_duplicates(subset=["ID"])
+
+    return df_total
+
+
+def upsert_postgres(df, tabela):
+    if df.empty:
+        print("⚠️ Nenhum dado")
+        return
+
+    df = df.loc[:, ~df.columns.duplicated()]
+    tabela_temp = f"{tabela}_temp"
+
+    df.to_sql(tabela_temp, engine, if_exists="replace", index=False)
+
+    colunas = list(df.columns)
+
+    query = f"""
+    INSERT INTO {tabela} ({', '.join(f'"{c}"' for c in colunas)})
+    SELECT {', '.join(f'"{c}"' for c in colunas)} FROM {tabela_temp}
+    ON CONFLICT ("ID") DO UPDATE SET
+    {', '.join([f'"{c}" = EXCLUDED."{c}"' for c in colunas if c != "ID"])};
+    """
+
+    with engine.begin() as conn:
+        conn.execute(text(query))
+        conn.execute(text(f'DROP TABLE {tabela_temp}'))
+
+    print(f"✅ UPSERT realizado: {len(df)} registros")
+
+
+# ================================
+# PIPELINE
+# ================================
+def run_pipeline():
+    hoje = datetime.now()
+    ano = hoje.year
+    mes = hoje.month
+
+    if not testar_token():
+        print("❌ Token inválido")
+        return
+
+    criar_tabela_se_nao_existe()
+
+    df_total = pd.DataFrame()
+
+    for empresa in EMPRESAS:
+        df = coletar_mes(ano, mes, empresa)
+
+        if not df.empty:
+            df["Empresa"] = empresa
+            df_total = pd.concat([df_total, df], ignore_index=True)
+
+    upsert_postgres(df_total, "pedidos")
+
+    print(f"🏁 Finalizado | {len(df_total)} registros")
+
+
+# ================================
+# EXECUÇÃO
+# ================================
+if __name__ == "__main__":
+    run_pipeline()
