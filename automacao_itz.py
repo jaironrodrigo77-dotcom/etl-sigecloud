@@ -14,6 +14,8 @@ import urllib.parse
 # ================================
 API_BASE = "https://api.sigecloud.com.br/request/Pedidos/Pesquisar"
 EMPRESAS = ["PDV ITZ 01", "PDV ITZ 02", "PDV ITZ 03", "PDV ITZ 04"]
+ORIGEM_BANCO = "GRUPO_ITZ"
+TABELA_DESTINO = "pedidos"
 
 HEADERS = {
     "Authorization-Token": os.getenv("API_TOKEN"),
@@ -22,25 +24,16 @@ HEADERS = {
 }
 
 # ================================
-# CONEXÃO POSTGRESQL (SUPABASE / POOLER)
+# CONEXÃO POSTGRESQL
 # ================================
 DB_USER = os.getenv("DB_USER")
 DB_PASS = urllib.parse.quote_plus(os.getenv("DB_PASS", ""))
 DB_HOST = os.getenv("DB_HOST")
-DB_PORT = os.getenv("DB_PORT", "6543")
+DB_PORT = os.getenv("DB_PORT", "5432")
 DB_NAME = os.getenv("DB_NAME", "postgres")
 
-print("DB_HOST:", DB_HOST)
-print("DB_PORT:", DB_PORT)
-print("DB_NAME:", DB_NAME)
-print("DB_USER:", DB_USER)
-
-connection_string = (
-    f"postgresql+psycopg2://{DB_USER}:{DB_PASS}@{DB_HOST}:{DB_PORT}/{DB_NAME}"
-)
-
 engine = create_engine(
-    connection_string,
+    f"postgresql+psycopg2://{DB_USER}:{DB_PASS}@{DB_HOST}:{DB_PORT}/{DB_NAME}",
     connect_args={"sslmode": "require"}
 )
 
@@ -60,39 +53,86 @@ def testar_token():
 
 
 def criar_tabela_se_nao_existe():
-    query = """
-    CREATE TABLE IF NOT EXISTS pedidos (
-        "ID" TEXT PRIMARY KEY
+    query = f'''
+    CREATE TABLE IF NOT EXISTS "{TABELA_DESTINO}" (
+        "ID_UNICO" TEXT
     );
-    """
+    '''
     with engine.begin() as conn:
         conn.execute(text(query))
 
 
 def garantir_colunas_existentes(df, tabela):
-    """
-    Cria automaticamente no PostgreSQL as colunas que existem no DataFrame
-    mas ainda não existem na tabela destino.
-    Todas serão criadas como TEXT para simplificar a carga inicial.
-    """
     if df.empty:
         return
 
-    query_colunas_existentes = text("""
+    query = text("""
         SELECT column_name
         FROM information_schema.columns
         WHERE table_name = :tabela
     """)
 
     with engine.begin() as conn:
-        resultado = conn.execute(query_colunas_existentes, {"tabela": tabela})
+        resultado = conn.execute(query, {"tabela": tabela})
         colunas_existentes = {row[0] for row in resultado.fetchall()}
 
         for coluna in df.columns:
             if coluna not in colunas_existentes:
-                alter = text(f'ALTER TABLE "{tabela}" ADD COLUMN "{coluna}" TEXT')
-                conn.execute(alter)
-                print(f'🧱 Coluna criada: {coluna}')
+                conn.execute(text(f'ALTER TABLE "{tabela}" ADD COLUMN "{coluna}" TEXT'))
+                print(f"🧱 Coluna criada: {coluna}")
+
+
+def ajustar_constraint_id_unico(tabela):
+    with engine.begin() as conn:
+        conn.execute(text(f'ALTER TABLE "{tabela}" ADD COLUMN IF NOT EXISTS "ID_UNICO" TEXT'))
+        conn.execute(text(f'ALTER TABLE "{tabela}" ADD COLUMN IF NOT EXISTS "OrigemBanco" TEXT'))
+        conn.execute(text(f'ALTER TABLE "{tabela}" ADD COLUMN IF NOT EXISTS "Empresa" TEXT'))
+        conn.execute(text(f'ALTER TABLE "{tabela}" ADD COLUMN IF NOT EXISTS "ID" TEXT'))
+
+        conn.execute(text(f'''
+            UPDATE "{tabela}"
+            SET "ID_UNICO" = COALESCE("OrigemBanco",'SEM_ORIGEM') || '_' ||
+                             COALESCE("Empresa",'SEM_EMPRESA') || '_' ||
+                             COALESCE("ID",'SEM_ID')
+            WHERE "ID_UNICO" IS NULL
+        '''))
+
+        conn.execute(text(f'''
+            DELETE FROM "{tabela}" a
+            USING "{tabela}" b
+            WHERE a.ctid < b.ctid
+              AND a."ID_UNICO" = b."ID_UNICO"
+        '''))
+
+        conn.execute(text(f'''
+            DO $$
+            DECLARE
+                pk_name text;
+            BEGIN
+                SELECT con.conname
+                INTO pk_name
+                FROM pg_constraint con
+                JOIN pg_class rel ON rel.oid = con.conrelid
+                WHERE rel.relname = '{tabela}'
+                  AND con.contype = 'p';
+
+                IF pk_name IS NOT NULL THEN
+                    EXECUTE format('ALTER TABLE "{tabela}" DROP CONSTRAINT %I', pk_name);
+                END IF;
+            END $$;
+        '''))
+
+        conn.execute(text(f'''
+            ALTER TABLE "{tabela}"
+            DROP CONSTRAINT IF EXISTS "{tabela}_id_unico_key"
+        '''))
+
+        conn.execute(text(f'''
+            ALTER TABLE "{tabela}"
+            ADD CONSTRAINT "{tabela}_id_unico_key" UNIQUE ("ID_UNICO")
+        '''))
+
+        print('✅ Constraint UNIQUE garantida em "ID_UNICO"')
 
 
 def coletar_pedidos_intervalo(start, end, empresa):
@@ -112,7 +152,7 @@ def coletar_pedidos_intervalo(start, end, empresa):
 
         resp = requests.get(API_BASE, headers=HEADERS, params=params, timeout=180)
         if resp.status_code != 200:
-            print(f"⚠️ Erro {resp.status_code} ao consultar {empresa} de {start} até {end}")
+            print(f"⚠️ Erro {resp.status_code} | {empresa} | {start} até {end}")
             break
 
         dados = resp.json()
@@ -183,8 +223,33 @@ def coletar_mes(ano, mes, empresa, max_workers=5):
     if "ID" in df_total.columns:
         df_total = df_total.drop_duplicates(subset=["ID"])
 
-    print(f"✅ {empresa} | mês {mes:02d}/{ano} | {len(df_total)} registros")
     return df_total
+
+
+def preparar_dataframe(df):
+    if df.empty:
+        return df
+
+    df = df.loc[:, ~df.columns.duplicated()].copy()
+
+    if "ID" not in df.columns:
+        raise ValueError("O DataFrame não possui a coluna 'ID'.")
+
+    if "Empresa" not in df.columns:
+        raise ValueError("O DataFrame não possui a coluna 'Empresa'.")
+
+    df["Empresa"] = df["Empresa"].astype(str).str.strip()
+    df["OrigemBanco"] = ORIGEM_BANCO
+    df["ID_UNICO"] = (
+        df["OrigemBanco"].astype(str).str.strip() + "_" +
+        df["Empresa"].astype(str).str.strip() + "_" +
+        df["ID"].astype(str).str.strip()
+    )
+
+    for col in df.columns:
+        df[col] = df[col].astype(str).where(df[col].notna(), None)
+
+    return df
 
 
 def upsert_postgres(df, tabela):
@@ -192,30 +257,24 @@ def upsert_postgres(df, tabela):
         print("⚠️ Nenhum dado")
         return
 
-    df = df.loc[:, ~df.columns.duplicated()].copy()
-
-    for col in df.columns:
-        df[col] = df[col].astype(str).where(df[col].notna(), None)
+    df = preparar_dataframe(df)
 
     criar_tabela_se_nao_existe()
     garantir_colunas_existentes(df, tabela)
+    ajustar_constraint_id_unico(tabela)
 
     tabela_temp = f"{tabela}_temp"
-
     df.to_sql(tabela_temp, engine, if_exists="replace", index=False)
 
     colunas = list(df.columns)
-
     insert_cols = ', '.join(f'"{c}"' for c in colunas)
     select_cols = ', '.join(f'"{c}"' for c in colunas)
-    update_set = ', '.join(
-        f'"{c}" = EXCLUDED."{c}"' for c in colunas if c != "ID"
-    )
+    update_set = ', '.join(f'"{c}" = EXCLUDED."{c}"' for c in colunas if c != "ID_UNICO")
 
     query = f"""
     INSERT INTO "{tabela}" ({insert_cols})
     SELECT {select_cols} FROM "{tabela_temp}"
-    ON CONFLICT ("ID") DO UPDATE SET
+    ON CONFLICT ("ID_UNICO") DO UPDATE SET
     {update_set};
     """
 
@@ -226,21 +285,16 @@ def upsert_postgres(df, tabela):
     print(f"✅ UPSERT realizado: {len(df)} registros")
 
 
-# ================================
-# PIPELINE
-# ================================
 def run_pipeline():
     hoje = datetime.now()
     ano = hoje.year
     mes = hoje.month
 
-    print(f"🚀 Iniciando pipeline | {mes:02d}/{ano}")
+    print(f"🚀 Iniciando pipeline {ORIGEM_BANCO} | {mes:02d}/{ano}")
 
     if not testar_token():
         print("❌ Token inválido")
         return
-
-    criar_tabela_se_nao_existe()
 
     df_total = pd.DataFrame()
 
@@ -252,15 +306,12 @@ def run_pipeline():
             df_total = pd.concat([df_total, df], ignore_index=True)
 
     if "ID" in df_total.columns:
-        df_total = df_total.drop_duplicates(subset=["ID"])
+        df_total = df_total.drop_duplicates(subset=["ID", "Empresa"])
 
-    upsert_postgres(df_total, "pedidos")
+    upsert_postgres(df_total, TABELA_DESTINO)
 
     print(f"🏁 Finalizado | {len(df_total)} registros")
 
 
-# ================================
-# EXECUÇÃO
-# ================================
 if __name__ == "__main__":
     run_pipeline()
