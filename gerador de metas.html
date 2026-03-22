@@ -1,0 +1,769 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Gerador de Metas para Power BI</title>
+    <style>
+        :root {
+            --color-white: rgba(255, 255, 255, 1);
+            --color-black: rgba(0, 0, 0, 1);
+            --color-cream-50: rgba(252, 252, 249, 1);
+            --color-cream-100: rgba(255, 255, 253, 1);
+            --color-gray-200: rgba(245, 245, 245, 1);
+            --color-gray-300: rgba(167, 169, 169, 1);
+            --color-gray-400: rgba(119, 124, 124, 1);
+            --color-slate-500: rgba(98, 108, 113, 1);
+            --color-brown-600: rgba(94, 82, 64, 1);
+            --color-charcoal-700: rgba(31, 33, 33, 1);
+            --color-charcoal-800: rgba(38, 40, 40, 1);
+            --color-slate-900: rgba(19, 52, 59, 1);
+            --color-teal-300: rgba(50, 184, 198, 1);
+            --color-teal-500: rgba(33, 128, 141, 1);
+            --color-teal-600: rgba(29, 116, 128, 1);
+            --color-teal-700: rgba(26, 104, 115, 1);
+            --color-brown-600-rgb: 94, 82, 64;
+            --color-teal-500-rgb: 33, 128, 141;
+            --color-slate-900-rgb: 19, 52, 59;
+            --color-background: var(--color-cream-50);
+            --color-surface: var(--color-cream-100);
+            --color-text: var(--color-slate-900);
+            --color-text-secondary: var(--color-slate-500);
+            --color-primary: var(--color-teal-500);
+            --color-primary-hover: var(--color-teal-600);
+            --color-primary-active: var(--color-teal-700);
+            --color-secondary: rgba(var(--color-brown-600-rgb), 0.12);
+            --color-secondary-hover: rgba(var(--color-brown-600-rgb), 0.2);
+            --color-border: rgba(var(--color-brown-600-rgb), 0.2);
+            --color-btn-primary-text: var(--color-cream-50);
+            --color-card-border: rgba(var(--color-brown-600-rgb), 0.12);
+            --radius-base: 8px;
+            --radius-lg: 12px;
+            --space-8: 8px;
+            --space-12: 12px;
+            --space-16: 16px;
+            --space-20: 20px;
+            --space-24: 24px;
+            --font-size-base: 14px;
+            --font-size-lg: 16px;
+            --font-size-xl: 18px;
+            --font-size-2xl: 20px;
+            --font-weight-medium: 500;
+            --font-weight-semibold: 550;
+        }
+
+        @media (prefers-color-scheme: dark) {
+            :root {
+                --color-gray-400-rgb: 119, 124, 124;
+                --color-gray-300-rgb: 167, 169, 169;
+                --color-gray-200-rgb: 245, 245, 245;
+                --color-background: var(--color-charcoal-700);
+                --color-surface: var(--color-charcoal-800);
+                --color-text: var(--color-gray-200);
+                --color-text-secondary: rgba(var(--color-gray-300-rgb), 0.7);
+                --color-primary: var(--color-teal-300);
+                --color-secondary: rgba(var(--color-gray-400-rgb), 0.15);
+                --color-secondary-hover: rgba(var(--color-gray-400-rgb), 0.25);
+                --color-border: rgba(var(--color-gray-400-rgb), 0.3);
+                --color-card-border: rgba(var(--color-gray-400-rgb), 0.2);
+            }
+        }
+
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            background-color: var(--color-background);
+            color: var(--color-text);
+            padding: var(--space-24);
+            font-size: var(--font-size-base);
+        }
+
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+        }
+
+        h1 {
+            font-size: var(--font-size-2xl);
+            font-weight: var(--font-weight-semibold);
+            margin-bottom: var(--space-8);
+            color: var(--color-text);
+        }
+
+        .subtitle {
+            color: var(--color-text-secondary);
+            margin-bottom: var(--space-24);
+            font-size: var(--font-size-base);
+        }
+
+        .card {
+            background: var(--color-surface);
+            border: 1px solid var(--color-card-border);
+            border-radius: var(--radius-lg);
+            padding: var(--space-24);
+            margin-bottom: var(--space-20);
+        }
+
+        .form-group {
+            margin-bottom: var(--space-16);
+        }
+
+        label {
+            display: block;
+            margin-bottom: var(--space-8);
+            font-weight: var(--font-weight-medium);
+            font-size: var(--font-size-base);
+        }
+
+        input, select {
+            width: 100%;
+            padding: var(--space-12);
+            border: 1px solid var(--color-border);
+            border-radius: var(--radius-base);
+            font-size: var(--font-size-base);
+            background: var(--color-surface);
+            color: var(--color-text);
+        }
+
+        input:focus, select:focus {
+            outline: 2px solid var(--color-primary);
+            border-color: var(--color-primary);
+        }
+
+        .input-row {
+            display: grid;
+            grid-template-columns: 2fr 1fr 1fr 1fr 2fr auto;
+            gap: var(--space-12);
+            margin-bottom: var(--space-12);
+            align-items: end;
+        }
+
+        .btn {
+            padding: var(--space-12) var(--space-20);
+            border: none;
+            border-radius: var(--radius-base);
+            font-size: var(--font-size-base);
+            font-weight: var(--font-weight-medium);
+            cursor: pointer;
+            transition: all 0.2s;
+        }
+
+        .btn-primary {
+            background: var(--color-primary);
+            color: var(--color-btn-primary-text);
+        }
+
+        .btn-primary:hover {
+            background: var(--color-primary-hover);
+        }
+
+        .btn-secondary {
+            background: var(--color-secondary);
+            color: var(--color-text);
+        }
+
+        .btn-secondary:hover {
+            background: var(--color-secondary-hover);
+        }
+
+        .btn-small {
+            padding: var(--space-8) var(--space-16);
+            font-size: var(--font-size-base);
+        }
+
+        .btn-remove {
+            background: rgba(220, 38, 38, 0.1);
+            color: #dc2626;
+        }
+
+        .btn-remove:hover {
+            background: rgba(220, 38, 38, 0.2);
+        }
+
+        .action-buttons {
+            display: flex;
+            gap: var(--space-12);
+            margin-top: var(--space-20);
+        }
+
+        .table-container {
+            overflow-x: auto;
+            margin-top: var(--space-16);
+        }
+
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            font-size: var(--font-size-base);
+        }
+
+        th, td {
+            padding: var(--space-12);
+            text-align: left;
+            border-bottom: 1px solid var(--color-border);
+        }
+
+        th {
+            font-weight: var(--font-weight-semibold);
+            background: var(--color-secondary);
+        }
+
+        tr:hover {
+            background: var(--color-secondary);
+        }
+
+        .stats {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: var(--space-16);
+            margin-bottom: var(--space-20);
+        }
+
+        .stat-card {
+            background: var(--color-secondary);
+            padding: var(--space-16);
+            border-radius: var(--radius-base);
+        }
+
+        .stat-label {
+            font-size: var(--font-size-base);
+            color: var(--color-text-secondary);
+            margin-bottom: var(--space-8);
+        }
+
+        .stat-value {
+            font-size: var(--font-size-xl);
+            font-weight: var(--font-weight-semibold);
+            color: var(--color-text);
+        }
+
+        .checkbox-group {
+            display: flex;
+            align-items: center;
+            gap: var(--space-8);
+            margin-bottom: var(--space-16);
+        }
+
+        .checkbox-group input[type="checkbox"] {
+            width: auto;
+        }
+
+        .holiday-input {
+            display: flex;
+            gap: var(--space-12);
+            margin-bottom: var(--space-12);
+        }
+
+        .holiday-input input {
+            flex: 1;
+        }
+
+        .alert {
+            padding: var(--space-16);
+            border-radius: var(--radius-base);
+            margin-bottom: var(--space-16);
+            background: rgba(var(--color-teal-500-rgb), 0.1);
+            border: 1px solid var(--color-primary);
+            color: var(--color-text);
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>📊 Gerador de Metas para Power BI</h1>
+        <p class="subtitle">Crie sua tabela de metas com distribuição diária automática</p>
+
+        <div class="card">
+            <h3 style="margin-bottom: 16px;">⚙️ Configurações</h3>
+            
+            <div class="form-group">
+                <label>Método de Distribuição</label>
+                <select id="metodoDistribuicao">
+                    <option value="progressiva">Distribuição Progressiva (crescente durante a semana)</option>
+                    <option value="igual">Distribuição Igual (todos os dias com mesmo valor)</option>
+                </select>
+            </div>
+
+            <div class="checkbox-group">
+                <input type="checkbox" id="apenasUteis" checked>
+                <label for="apenasUteis" style="margin: 0;">Distribuir apenas em dias úteis (seg-sex)</label>
+            </div>
+
+            <div class="checkbox-group">
+                <input type="checkbox" id="considerarFeriados">
+                <label for="considerarFeriados" style="margin: 0;">Considerar feriados</label>
+            </div>
+
+            <div id="feriadosSection" style="display: none; margin-top: 16px;">
+                <label>Adicionar Feriados (opcional)</label>
+                <div class="holiday-input">
+                    <input type="date" id="feriadoData">
+                    <input type="text" id="feriadoNome" placeholder="Nome do feriado">
+                    <button class="btn btn-secondary btn-small" onclick="adicionarFeriado()">+ Adicionar</button>
+                </div>
+                <div id="feriadosList"></div>
+            </div>
+        </div>
+
+        <div class="card">
+            <h3 style="margin-bottom: 16px;">📝 Inserir Metas Mensais</h3>
+            
+            <div id="metasInputs">
+                <div class="input-row">
+                    <div class="form-group" style="margin: 0;">
+                        <label>Vendedor</label>
+                        <input type="text" class="vendedor-input" placeholder="Nome do vendedor">
+                    </div>
+                    <div class="form-group" style="margin: 0;">
+                        <label>Modelo</label>
+                        <select class="modelo-input">
+                            <option value="B2B">B2B</option>
+                            <option value="B2C">B2C</option>
+                        </select>
+                    </div>
+                    <div class="form-group" style="margin: 0;">
+                        <label>Ano</label>
+                        <input type="number" class="ano-input" value="2025" min="2020" max="2030">
+                    </div>
+                    <div class="form-group" style="margin: 0;">
+                        <label>Mês</label>
+                        <select class="mes-input">
+                            <option value="1">Janeiro</option>
+                            <option value="2">Fevereiro</option>
+                            <option value="3">Março</option>
+                            <option value="4">Abril</option>
+                            <option value="5">Maio</option>
+                            <option value="6">Junho</option>
+                            <option value="7">Julho</option>
+                            <option value="8">Agosto</option>
+                            <option value="9">Setembro</option>
+                            <option value="10">Outubro</option>
+                            <option value="11">Novembro</option>
+                            <option value="12">Dezembro</option>
+                        </select>
+                    </div>
+                    <div class="form-group" style="margin: 0;">
+                        <label>Meta Mensal (R$)</label>
+                        <input type="number" class="meta-input" placeholder="Ex: 500000" step="0.01">
+                    </div>
+                    <button class="btn btn-remove btn-small" onclick="removerLinha(this)" style="display: none;">✕</button>
+                </div>
+            </div>
+
+            <button class="btn btn-secondary" onclick="adicionarLinha()" style="margin-top: 12px;">+ Adicionar Mês</button>
+
+            <div class="action-buttons">
+                <button class="btn btn-primary" onclick="gerarTabela()">🚀 Gerar Tabela</button>
+                <button class="btn btn-secondary" onclick="limparTudo()">🗑️ Limpar Tudo</button>
+            </div>
+        </div>
+
+        <div id="resultSection" style="display: none;">
+            <div class="card">
+                <h3 style="margin-bottom: 16px;">📈 Estatísticas</h3>
+                <div class="stats">
+                    <div class="stat-card">
+                        <div class="stat-label">Total de Registros</div>
+                        <div class="stat-value" id="totalRegistros">0</div>
+                    </div>
+                    <div class="stat-card">
+                        <div class="stat-label">Meta Total</div>
+                        <div class="stat-value" id="metaTotal">R$ 0,00</div>
+                    </div>
+                    <div class="stat-card">
+                        <div class="stat-label">Período</div>
+                        <div class="stat-value" id="periodo">-</div>
+                    </div>
+                </div>
+            </div>
+
+            <div class="card">
+                <h3 style="margin-bottom: 16px;">📋 Tabela Gerada</h3>
+                <div class="alert">
+                    💡 <strong>Dica:</strong> Clique em "Copiar CSV" e cole diretamente no Excel ou Power BI (Inserir Dados)
+                </div>
+                
+                <div class="action-buttons">
+                    <button class="btn btn-primary" onclick="copiarCSV()">📋 Copiar CSV</button>
+                    <button class="btn btn-secondary" onclick="baixarCSV()">💾 Baixar CSV</button>
+                    <button class="btn btn-secondary" onclick="baixarExcel()">📊 Baixar Excel</button>
+                </div>
+
+                <div class="table-container">
+                    <table id="resultTable">
+                        <thead>
+                            <tr>
+                                <th>Vendedor</th>
+                                <th>Modelo</th>
+                                <th>Data</th>
+                                <th>Ano</th>
+                                <th>Mês</th>
+                                <th>Dia</th>
+                                <th>Dia da Semana</th>                    <th>Meta Mensal</th>
+                    <th>Dias Úteis Mês</th>
+                    <th>Peso do Dia</th>
+                    <th>Meta Diária</th>
+                            </tr>
+                        </thead>
+                        <tbody id="resultBody">
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        let feriados = [];
+        let dadosGerados = [];
+
+        document.getElementById('considerarFeriados').addEventListener('change', function() {
+            document.getElementById('feriadosSection').style.display = this.checked ? 'block' : 'none';
+        });
+
+        function adicionarLinha() {
+            const container = document.getElementById('metasInputs');
+            const novaLinha = document.createElement('div');
+            novaLinha.className = 'input-row';
+            novaLinha.innerHTML = `
+                <div class="form-group" style="margin: 0;">
+                    <label>Vendedor</label>
+                    <input type="text" class="vendedor-input" placeholder="Nome do vendedor">
+                </div>
+                <div class="form-group" style="margin: 0;">
+                    <label>Modelo</label>
+                    <select class="modelo-input">
+                        <option value="B2B">B2B</option>
+                        <option value="B2C">B2C</option>
+                    </select>
+                </div>
+                <div class="form-group" style="margin: 0;">
+                    <label>Ano</label>
+                    <input type="number" class="ano-input" value="2025" min="2020" max="2030">
+                </div>
+                <div class="form-group" style="margin: 0;">
+                    <label>Mês</label>
+                    <select class="mes-input">
+                        <option value="1">Janeiro</option>
+                        <option value="2">Fevereiro</option>
+                        <option value="3">Março</option>
+                        <option value="4">Abril</option>
+                        <option value="5">Maio</option>
+                        <option value="6">Junho</option>
+                        <option value="7">Julho</option>
+                        <option value="8">Agosto</option>
+                        <option value="9">Setembro</option>
+                        <option value="10">Outubro</option>
+                        <option value="11">Novembro</option>
+                        <option value="12">Dezembro</option>
+                    </select>
+                </div>
+                <div class="form-group" style="margin: 0;">
+                    <label>Meta Mensal (R$)</label>
+                    <input type="number" class="meta-input" placeholder="Ex: 500000" step="0.01">
+                </div>
+                <button class="btn btn-remove btn-small" onclick="removerLinha(this)">✕</button>
+            `;
+            container.appendChild(novaLinha);
+            atualizarBotoesRemover();
+        }
+
+        function removerLinha(btn) {
+            btn.closest('.input-row').remove();
+            atualizarBotoesRemover();
+        }
+
+        function atualizarBotoesRemover() {
+            const linhas = document.querySelectorAll('.input-row');
+            linhas.forEach((linha, index) => {
+                const btnRemover = linha.querySelector('.btn-remove');
+                btnRemover.style.display = linhas.length > 1 ? 'block' : 'none';
+            });
+        }
+
+        function adicionarFeriado() {
+            const data = document.getElementById('feriadoData').value;
+            const nome = document.getElementById('feriadoNome').value;
+            
+            if (!data) {
+                alert('Por favor, selecione uma data');
+                return;
+            }
+
+            feriados.push({ data, nome: nome || 'Feriado' });
+            atualizarListaFeriados();
+            
+            document.getElementById('feriadoData').value = '';
+            document.getElementById('feriadoNome').value = '';
+        }
+
+        function atualizarListaFeriados() {
+            const lista = document.getElementById('feriadosList');
+            lista.innerHTML = feriados.map((f, i) => `
+                <div style="display: flex; justify-content: space-between; align-items: center; padding: 8px; background: var(--color-secondary); border-radius: var(--radius-base); margin-top: 8px;">
+                    <span>${new Date(f.data + 'T12:00:00').toLocaleDateString('pt-BR')} - ${f.nome}</span>
+                    <button class="btn btn-remove btn-small" onclick="removerFeriado(${i})">✕</button>
+                </div>
+            `).join('');
+        }
+
+        function removerFeriado(index) {
+            feriados.splice(index, 1);
+            atualizarListaFeriados();
+        }
+
+        function ehDiaUtil(data, considerarFeriados) {
+            const diaSemana = data.getDay();
+            if (diaSemana === 0 || diaSemana === 6) return false;
+            
+            if (considerarFeriados) {
+                const dataStr = data.toISOString().split('T')[0];
+                if (feriados.some(f => f.data === dataStr)) return false;
+            }
+            
+            return true;
+        }
+
+        function getDiaSemanaTexto(dia) {
+            const dias = ['Domingo', 'Segunda', 'Terça', 'Quarta', 'Quinta', 'Sexta', 'Sábado'];
+            return dias[dia];
+        }
+
+        function getPesoDia(diaSemana, metodoDistribuicao) {
+            // Domingo = 0, Segunda = 1, ..., Sábado = 6
+            if (metodoDistribuicao === 'igual') {
+                return 1;
+            }
+            
+            // Distribuição progressiva: Domingo (1) até Sábado (7)
+            const pesos = {
+                0: 1,   // Domingo
+                1: 2,   // Segunda
+                2: 3,   // Terça
+                3: 4,   // Quarta
+                4: 5,   // Quinta
+                5: 6,   // Sexta
+                6: 7    // Sábado
+            };
+            return pesos[diaSemana];
+        }
+
+        function gerarTabela() {
+            const linhas = document.querySelectorAll('.input-row');
+            const metas = [];
+            
+            linhas.forEach(linha => {
+                const vendedor = linha.querySelector('.vendedor-input').value.trim();
+                const modelo = linha.querySelector('.modelo-input').value;
+                const ano = parseInt(linha.querySelector('.ano-input').value);
+                const mes = parseInt(linha.querySelector('.mes-input').value);
+                const metaMensal = parseFloat(linha.querySelector('.meta-input').value);
+                
+                if (vendedor && modelo && ano && mes && metaMensal) {
+                    metas.push({ vendedor, modelo, ano, mes, metaMensal });
+                }
+            });
+
+            if (metas.length === 0) {
+                alert('Por favor, preencha pelo menos uma meta');
+                return;
+            }
+
+            const apenasUteis = document.getElementById('apenasUteis').checked;
+            const considerarFeriados = document.getElementById('considerarFeriados').checked;
+            const metodoDistribuicao = document.getElementById('metodoDistribuicao').value;
+
+            dadosGerados = [];
+            let totalMeta = 0;
+
+            metas.forEach(meta => {
+                const diasNoMes = new Date(meta.ano, meta.mes, 0).getDate();
+                let diasUteis = 0;
+                let somaPesos = 0;
+
+                // Primeiro, contar dias úteis e soma dos pesos
+                for (let dia = 1; dia <= diasNoMes; dia++) {
+                    const data = new Date(meta.ano, meta.mes - 1, dia);
+                    if (!apenasUteis || ehDiaUtil(data, considerarFeriados)) {
+                        diasUteis++;
+                        somaPesos += getPesoDia(data.getDay(), metodoDistribuicao);
+                    }
+                }
+
+                // Depois, gerar os registros
+                for (let dia = 1; dia <= diasNoMes; dia++) {
+                    const data = new Date(meta.ano, meta.mes - 1, dia);
+                    const incluirDia = !apenasUteis || ehDiaUtil(data, considerarFeriados);
+                    
+                    if (incluirDia) {
+                        const dataFormatada = data.toISOString().split('T')[0];
+                        const pesoDia = getPesoDia(data.getDay(), metodoDistribuicao);
+                        const metaDiaria = (meta.metaMensal * pesoDia) / somaPesos;
+                        
+                        dadosGerados.push({
+                            vendedor: meta.vendedor,
+                            modelo: meta.modelo,
+                            data: dataFormatada,
+                            ano: meta.ano,
+                            mes: meta.mes,
+                            dia: dia,
+                            diaSemana: getDiaSemanaTexto(data.getDay()),
+                            metaMensal: meta.metaMensal,
+                            diasUteisNoMes: diasUteis,
+                            pesoDia: pesoDia,
+                            metaDiaria: metaDiaria
+                        });
+                        totalMeta += metaDiaria;
+                    }
+                }
+            });
+
+            // Ordenar por data
+            dadosGerados.sort((a, b) => new Date(a.data) - new Date(b.data));
+
+            // Atualizar estatísticas
+            document.getElementById('totalRegistros').textContent = dadosGerados.length;
+            document.getElementById('metaTotal').textContent = totalMeta.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
+            
+            if (dadosGerados.length > 0) {
+                const primeira = new Date(dadosGerados[0].data);
+                const ultima = new Date(dadosGerados[dadosGerados.length - 1].data);
+                document.getElementById('periodo').textContent = 
+                    `${primeira.toLocaleDateString('pt-BR')} - ${ultima.toLocaleDateString('pt-BR')}`;
+            }
+
+            // Renderizar tabela
+            const tbody = document.getElementById('resultBody');
+            tbody.innerHTML = dadosGerados.map(d => `
+                <tr>
+                    <td>${d.vendedor}</td>
+                    <td>${d.modelo}</td>
+                    <td>${new Date(d.data + 'T12:00:00').toLocaleDateString('pt-BR')}</td>
+                    <td>${d.ano}</td>
+                    <td>${d.mes}</td>
+                    <td>${d.dia}</td>
+                    <td>${d.diaSemana}</td>
+                    <td>${d.metaMensal.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}</td>
+                    <td>${d.diasUteisNoMes}</td>
+                    <td>${d.pesoDia}</td>
+                    <td>${d.metaDiaria.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}</td>
+                </tr>
+            `).join('');
+
+            document.getElementById('resultSection').style.display = 'block';
+            document.getElementById('resultSection').scrollIntoView({ behavior: 'smooth' });
+        }
+
+        function copiarCSV() {
+            const csv = gerarCSVTexto();
+            navigator.clipboard.writeText(csv).then(() => {
+                alert('✅ CSV copiado! Cole no Excel ou Power BI (Página Inicial → Inserir Dados)');
+            }).catch(() => {
+                alert('❌ Erro ao copiar. Tente baixar o arquivo.');
+            });
+        }
+
+        function gerarCSVTexto() {
+            let csv = 'Vendedor;Modelo;Data;Ano;Mes;Dia;DiaSemana;MetaMensal;DiasUteisNoMes;PesoDia;MetaDiaria\n';
+            dadosGerados.forEach(d => {
+                const dataFormatada = new Date(d.data + 'T12:00:00').toLocaleDateString('pt-BR');
+                csv += `${d.vendedor};${d.modelo};${dataFormatada};${d.ano};${d.mes};${d.dia};${d.diaSemana};${d.metaMensal.toFixed(2)};${d.diasUteisNoMes};${d.pesoDia};${d.metaDiaria.toFixed(2)}\n`;
+            });
+            return csv;
+        }
+
+        function baixarCSV() {
+            const csv = gerarCSVTexto();
+            const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+            const link = document.createElement('a');
+            link.href = URL.createObjectURL(blob);
+            link.download = 'metas_powerbi.csv';
+            link.click();
+        }
+
+        function baixarExcel() {
+            let html = '<html><head><meta charset="utf-8"></head><body><table border="1">';
+            html += '<tr><th>Vendedor</th><th>Modelo</th><th>Data</th><th>Ano</th><th>Mês</th><th>Dia</th><th>Dia da Semana</th><th>Meta Mensal</th><th>Dias Úteis Mês</th><th>Peso do Dia</th><th>Meta Diária</th></tr>';
+            
+            dadosGerados.forEach(d => {
+                const dataFormatada = new Date(d.data + 'T12:00:00').toLocaleDateString('pt-BR');
+                html += `<tr>
+                    <td>${d.vendedor}</td>
+                    <td>${d.modelo}</td>
+                    <td>${dataFormatada}</td>
+                    <td>${d.ano}</td>
+                    <td>${d.mes}</td>
+                    <td>${d.dia}</td>
+                    <td>${d.diaSemana}</td>
+                    <td>${d.metaMensal.toFixed(2)}</td>
+                    <td>${d.diasUteisNoMes}</td>
+                    <td>${d.pesoDia}</td>
+                    <td>${d.metaDiaria.toFixed(2)}</td>
+                </tr>`;
+            });
+            
+            html += '</table></body></html>';
+            
+            const blob = new Blob([html], { type: 'application/vnd.ms-excel' });
+            const link = document.createElement('a');
+            link.href = URL.createObjectURL(blob);
+            link.download = 'metas_powerbi.xls';
+            link.click();
+        }
+
+        function limparTudo() {
+            if (confirm('Tem certeza que deseja limpar todos os dados?')) {
+                document.getElementById('metasInputs').innerHTML = `
+                    <div class="input-row">
+                        <div class="form-group" style="margin: 0;">
+                            <label>Vendedor</label>
+                            <input type="text" class="vendedor-input" placeholder="Nome do vendedor">
+                        </div>
+                        <div class="form-group" style="margin: 0;">
+                            <label>Modelo</label>
+                            <select class="modelo-input">
+                                <option value="B2B">B2B</option>
+                                <option value="B2C">B2C</option>
+                            </select>
+                        </div>
+                        <div class="form-group" style="margin: 0;">
+                            <label>Ano</label>
+                            <input type="number" class="ano-input" value="2025" min="2020" max="2030">
+                        </div>
+                        <div class="form-group" style="margin: 0;">
+                            <label>Mês</label>
+                            <select class="mes-input">
+                                <option value="1">Janeiro</option>
+                                <option value="2">Fevereiro</option>
+                                <option value="3">Março</option>
+                                <option value="4">Abril</option>
+                                <option value="5">Maio</option>
+                                <option value="6">Junho</option>
+                                <option value="7">Julho</option>
+                                <option value="8">Agosto</option>
+                                <option value="9">Setembro</option>
+                                <option value="10">Outubro</option>
+                                <option value="11">Novembro</option>
+                                <option value="12">Dezembro</option>
+                            </select>
+                        </div>
+                        <div class="form-group" style="margin: 0;">
+                            <label>Meta Mensal (R$)</label>
+                            <input type="number" class="meta-input" placeholder="Ex: 500000" step="0.01">
+                        </div>
+                        <button class="btn btn-remove btn-small" onclick="removerLinha(this)" style="display: none;">✕</button>
+                    </div>
+                `;
+                feriados = [];
+                atualizarListaFeriados();
+                document.getElementById('resultSection').style.display = 'none';
+            }
+        }
+    </script>
+</body>
+</html>
