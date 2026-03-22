@@ -7,6 +7,7 @@ from datetime import datetime, timedelta
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from calendar import monthrange
 import os
+import urllib.parse
 
 # ================================
 # CONFIGURAÇÕES
@@ -23,8 +24,24 @@ HEADERS = {
 # ================================
 # CONEXÃO POSTGRESQL (SUPABASE)
 # ================================
+DB_USER = os.getenv("DB_USER")
+DB_PASS = urllib.parse.quote_plus(os.getenv("DB_PASS", ""))
+DB_HOST = os.getenv("DB_HOST")
+DB_PORT = os.getenv("DB_PORT", "5432")
+DB_NAME = os.getenv("DB_NAME", "postgres")
+
+print("DB_HOST:", DB_HOST)
+print("DB_PORT:", DB_PORT)
+print("DB_NAME:", DB_NAME)
+print("DB_USER:", DB_USER)
+
+connection_string = (
+    f"postgresql+psycopg2://{DB_USER}:{DB_PASS}@{DB_HOST}:{DB_PORT}/{DB_NAME}"
+)
+
 engine = create_engine(
-    f"postgresql+psycopg2://{os.getenv('DB_USER')}:{os.getenv('DB_PASS')}@{os.getenv('DB_HOST')}:{os.getenv('DB_PORT','5432')}/{os.getenv('DB_NAME','postgres')}?sslmode=require"
+    connection_string,
+    connect_args={"sslmode": "require"}
 )
 
 # ================================
@@ -84,7 +101,6 @@ def coletar_pedidos_intervalo(start, end, empresa):
         if df.empty:
             break
 
-        # tratar JSON
         col_complex = [c for c in df.columns if df[c].apply(lambda x: isinstance(x, (dict, list))).any()]
         for c in col_complex:
             df[c] = df[c].apply(lambda x: json.dumps(x) if x is not None else None)
@@ -105,7 +121,10 @@ def coletar_pedidos_dia(dia, empresa):
     hora_inicio = datetime(dia.year, dia.month, dia.day)
 
     while hora_inicio < datetime(dia.year, dia.month, dia.day, 23, 59, 59):
-        hora_fim = min(hora_inicio + timedelta(hours=1), datetime(dia.year, dia.month, dia.day, 23, 59, 59))
+        hora_fim = min(
+            hora_inicio + timedelta(hours=1),
+            datetime(dia.year, dia.month, dia.day, 23, 59, 59)
+        )
         df = coletar_pedidos_intervalo(hora_inicio, hora_fim, empresa)
 
         if not df.empty:
