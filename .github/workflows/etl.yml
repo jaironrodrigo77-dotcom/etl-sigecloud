@@ -30,4 +30,6 @@ jobs:
           DB_USER: ${{ secrets.DB_USER }}
           DB_PASS: ${{ secrets.DB_PASS }}
           DB_PORT: ${{ secrets.DB_PORT }}
-        run: python atualizar_pedidos.py
+        run: |
+         python automacao.py
+         python automacao_itz.py
