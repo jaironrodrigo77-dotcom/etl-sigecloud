@@ -2,7 +2,7 @@ name: ETL SigeCloud
 
 on:
   schedule:
-    - cron: '0 10 * * *'  # todo dia às 10h
+    - cron: '0 10 * * *'
   workflow_dispatch:
 
 jobs:
@@ -11,10 +11,10 @@ jobs:
 
     steps:
       - name: Baixar código
-        uses: actions/checkout@v3
+        uses: actions/checkout@v4
 
       - name: Configurar Python
-        uses: actions/setup-python@v4
+        uses: actions/setup-python@v5
         with:
           python-version: '3.11'
 
@@ -31,5 +31,5 @@ jobs:
           DB_PASS: ${{ secrets.DB_PASS }}
           DB_PORT: ${{ secrets.DB_PORT }}
         run: |
-         python automacao.py
-         python automacao_itz.py
+          python automacao.py
+          python automacao_itz.py
