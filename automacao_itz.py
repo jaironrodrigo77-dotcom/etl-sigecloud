@@ -22,12 +22,12 @@ HEADERS = {
 }
 
 # ================================
-# CONEXÃO POSTGRESQL (SUPABASE)
+# CONEXÃO POSTGRESQL (SUPABASE / POOLER)
 # ================================
 DB_USER = os.getenv("DB_USER")
 DB_PASS = urllib.parse.quote_plus(os.getenv("DB_PASS", ""))
 DB_HOST = os.getenv("DB_HOST")
-DB_PORT = os.getenv("DB_PORT", "5432")
+DB_PORT = os.getenv("DB_PORT", "6543")
 DB_NAME = os.getenv("DB_NAME", "postgres")
 
 print("DB_HOST:", DB_HOST)
@@ -62,12 +62,37 @@ def testar_token():
 def criar_tabela_se_nao_existe():
     query = """
     CREATE TABLE IF NOT EXISTS pedidos (
-        "ID" TEXT PRIMARY KEY,
-        "Empresa" TEXT
+        "ID" TEXT PRIMARY KEY
     );
     """
     with engine.begin() as conn:
         conn.execute(text(query))
+
+
+def garantir_colunas_existentes(df, tabela):
+    """
+    Cria automaticamente no PostgreSQL as colunas que existem no DataFrame
+    mas ainda não existem na tabela destino.
+    Todas serão criadas como TEXT para simplificar a carga inicial.
+    """
+    if df.empty:
+        return
+
+    query_colunas_existentes = text("""
+        SELECT column_name
+        FROM information_schema.columns
+        WHERE table_name = :tabela
+    """)
+
+    with engine.begin() as conn:
+        resultado = conn.execute(query_colunas_existentes, {"tabela": tabela})
+        colunas_existentes = {row[0] for row in resultado.fetchall()}
+
+        for coluna in df.columns:
+            if coluna not in colunas_existentes:
+                alter = text(f'ALTER TABLE "{tabela}" ADD COLUMN "{coluna}" TEXT')
+                conn.execute(alter)
+                print(f'🧱 Coluna criada: {coluna}')
 
 
 def coletar_pedidos_intervalo(start, end, empresa):
@@ -87,6 +112,7 @@ def coletar_pedidos_intervalo(start, end, empresa):
 
         resp = requests.get(API_BASE, headers=HEADERS, params=params, timeout=180)
         if resp.status_code != 200:
+            print(f"⚠️ Erro {resp.status_code} ao consultar {empresa} de {start} até {end}")
             break
 
         dados = resp.json()
@@ -103,7 +129,7 @@ def coletar_pedidos_intervalo(start, end, empresa):
 
         col_complex = [c for c in df.columns if df[c].apply(lambda x: isinstance(x, (dict, list))).any()]
         for c in col_complex:
-            df[c] = df[c].apply(lambda x: json.dumps(x) if x is not None else None)
+            df[c] = df[c].apply(lambda x: json.dumps(x, ensure_ascii=False) if x is not None else None)
 
         df_total = pd.concat([df_total, df], ignore_index=True)
 
@@ -135,6 +161,7 @@ def coletar_pedidos_dia(dia, empresa):
     if "ID" in df_dia.columns:
         df_dia = df_dia.drop_duplicates(subset=["ID"])
 
+    print(f"📦 {empresa} | {dia.strftime('%Y-%m-%d')} | {len(df_dia)} registros")
     return df_dia
 
 
@@ -142,6 +169,8 @@ def coletar_mes(ano, mes, empresa, max_workers=5):
     ultimo_dia = monthrange(ano, mes)[1]
     dias = [datetime(ano, mes, d) for d in range(1, ultimo_dia + 1)]
     df_total = pd.DataFrame()
+
+    print(f"📅 Coletando mês {mes:02d}/{ano} para {empresa}")
 
     with ThreadPoolExecutor(max_workers=max_workers) as executor:
         futures = [executor.submit(coletar_pedidos_dia, dia, empresa) for dia in dias]
@@ -154,6 +183,7 @@ def coletar_mes(ano, mes, empresa, max_workers=5):
     if "ID" in df_total.columns:
         df_total = df_total.drop_duplicates(subset=["ID"])
 
+    print(f"✅ {empresa} | mês {mes:02d}/{ano} | {len(df_total)} registros")
     return df_total
 
 
@@ -162,23 +192,36 @@ def upsert_postgres(df, tabela):
         print("⚠️ Nenhum dado")
         return
 
-    df = df.loc[:, ~df.columns.duplicated()]
+    df = df.loc[:, ~df.columns.duplicated()].copy()
+
+    for col in df.columns:
+        df[col] = df[col].astype(str).where(df[col].notna(), None)
+
+    criar_tabela_se_nao_existe()
+    garantir_colunas_existentes(df, tabela)
+
     tabela_temp = f"{tabela}_temp"
 
     df.to_sql(tabela_temp, engine, if_exists="replace", index=False)
 
     colunas = list(df.columns)
 
+    insert_cols = ', '.join(f'"{c}"' for c in colunas)
+    select_cols = ', '.join(f'"{c}"' for c in colunas)
+    update_set = ', '.join(
+        f'"{c}" = EXCLUDED."{c}"' for c in colunas if c != "ID"
+    )
+
     query = f"""
-    INSERT INTO {tabela} ({', '.join(f'"{c}"' for c in colunas)})
-    SELECT {', '.join(f'"{c}"' for c in colunas)} FROM {tabela_temp}
+    INSERT INTO "{tabela}" ({insert_cols})
+    SELECT {select_cols} FROM "{tabela_temp}"
     ON CONFLICT ("ID") DO UPDATE SET
-    {', '.join([f'"{c}" = EXCLUDED."{c}"' for c in colunas if c != "ID"])};
+    {update_set};
     """
 
     with engine.begin() as conn:
         conn.execute(text(query))
-        conn.execute(text(f'DROP TABLE {tabela_temp}'))
+        conn.execute(text(f'DROP TABLE IF EXISTS "{tabela_temp}"'))
 
     print(f"✅ UPSERT realizado: {len(df)} registros")
 
@@ -190,6 +233,8 @@ def run_pipeline():
     hoje = datetime.now()
     ano = hoje.year
     mes = hoje.month
+
+    print(f"🚀 Iniciando pipeline | {mes:02d}/{ano}")
 
     if not testar_token():
         print("❌ Token inválido")
@@ -205,6 +250,9 @@ def run_pipeline():
         if not df.empty:
             df["Empresa"] = empresa
             df_total = pd.concat([df_total, df], ignore_index=True)
+
+    if "ID" in df_total.columns:
+        df_total = df_total.drop_duplicates(subset=["ID"])
 
     upsert_postgres(df_total, "pedidos")
 
