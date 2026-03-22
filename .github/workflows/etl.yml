@@ -1,0 +1,33 @@
+name: ETL SigeCloud
+
+on:
+  schedule:
+    - cron: '0 10 * * *'  # todo dia às 10h
+  workflow_dispatch:
+
+jobs:
+  run-etl:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Baixar código
+        uses: actions/checkout@v3
+
+      - name: Configurar Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.11'
+
+      - name: Instalar dependências
+        run: pip install -r requirements.txt
+
+      - name: Executar ETL
+        env:
+          API_TOKEN: ${{ secrets.API_TOKEN }}
+          API_USER: ${{ secrets.API_USER }}
+          DB_HOST: ${{ secrets.DB_HOST }}
+          DB_NAME: ${{ secrets.DB_NAME }}
+          DB_USER: ${{ secrets.DB_USER }}
+          DB_PASS: ${{ secrets.DB_PASS }}
+          DB_PORT: ${{ secrets.DB_PORT }}
+        run: python atualizar_pedidos.py
