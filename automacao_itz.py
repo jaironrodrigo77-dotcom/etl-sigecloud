@@ -13,7 +13,7 @@ import urllib.parse
 # CONFIGURAÇÕES
 # ================================
 API_BASE = "https://api.sigecloud.com.br/request/Pedidos/Pesquisar"
-EMPRESAS = ["PDV ITZ 01", "PDV ITZ 02", "PDV ITZ 03", "PDV ITZ 04"]
+EMPRESAS = ["PDV ITZ 01", "PDV ITZ 02", "PDV ITZ 04", "27.293.549 JOAO PAULO SANTANA ABREU", "66.983.624 CLAUDIA DANIELLY CISIRNANDO SILVA FERREIRA"]
 ORIGEM_BANCO = "GRUPO_ITZ"
 TABELA_DESTINO = "pedidos"
 

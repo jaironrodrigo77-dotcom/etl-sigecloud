@@ -13,7 +13,7 @@ import urllib.parse
 # CONFIGURAÇÕES
 # ================================
 API_BASE = "https://api.sigecloud.com.br/request/Pedidos/Pesquisar"
-EMPRESAS = ["CASA DE SUCO - BARRA DO CORDA", "EMPORIO MIX"]
+EMPRESAS = ["CASA DE SUCO - BARRA DO CORDA", "EMPORIO MIX", "PDV ALTAMIRA", "TRIZIDELA DO VALE - CSM MIX"]
 ORIGEM_BANCO = "GRUPO_BARRA"
 TABELA_DESTINO = "pedidos"
 
