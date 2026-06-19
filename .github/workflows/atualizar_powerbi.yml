@@ -1,0 +1,41 @@
+name: Atualizar CSV Power BI
+
+on:
+  schedule:
+    - cron: "0 9 * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  atualizar:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Baixar repositório
+        uses: actions/checkout@v4
+
+      - name: Configurar Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Instalar dependências
+        run: |
+          pip install requests pandas
+
+      - name: Rodar script
+        env:
+          API_TOKEN: ${{ secrets.API_TOKEN }}
+          API_USER: ${{ secrets.API_USER }}
+        run: |
+          python scripts/gerar_base_powerbi.py
+
+      - name: Commit dos CSVs
+        run: |
+          git config user.name "github-actions"
+          git config user.email "github-actions@github.com"
+          git add dados/*.csv
+          git commit -m "Atualiza bases CSV Power BI" || echo "Sem alterações para commitar"
+          git push
