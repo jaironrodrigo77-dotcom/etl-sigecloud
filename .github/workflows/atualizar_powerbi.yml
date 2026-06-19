@@ -30,7 +30,7 @@ jobs:
           API_TOKEN: ${{ secrets.API_TOKEN }}
           API_USER: ${{ secrets.API_USER }}
         run: |
-          python scripts/gerar_base_powerbi.py
+          python scripts/automacao.py
 
       - name: Commit dos CSVs
         run: |
