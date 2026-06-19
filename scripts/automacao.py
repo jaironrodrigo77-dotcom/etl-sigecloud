@@ -5,7 +5,6 @@ import requests
 import pandas as pd
 
 from datetime import datetime, timedelta
-from calendar import monthrange
 from concurrent.futures import ThreadPoolExecutor, as_completed
 
 
@@ -44,7 +43,7 @@ HEADERS = {
 
 def testar_token():
     params = {
-        "dataInicial": "2026-01-01",
+        "dataInicial": "2025-01-01",
         "filtrarPor": "DataFaturamentoPedido",
         "empresa": GRUPOS["barra"]["empresas"][0],
         "pagina": 1,
@@ -152,17 +151,19 @@ def coletar_pedidos_dia(dia, empresa):
     return df_dia
 
 
-def coletar_mes_atual(empresas, max_workers=5):
-    hoje = datetime.now()
-    ano = hoje.year
-    mes = hoje.month
-    ultimo_dia = monthrange(ano, mes)[1]
+def coletar_periodo(empresas, data_inicio, data_fim, max_workers=5):
+    dias = []
+    dia_atual = datetime(data_inicio.year, data_inicio.month, data_inicio.day)
+    data_fim = datetime(data_fim.year, data_fim.month, data_fim.day)
 
-    dias = [datetime(ano, mes, d) for d in range(1, ultimo_dia + 1)]
+    while dia_atual <= data_fim:
+        dias.append(dia_atual)
+        dia_atual += timedelta(days=1)
+
     frames = []
 
     for empresa in empresas:
-        print(f"📅 Coletando {empresa} | {mes:02d}/{ano}")
+        print(f"📅 Coletando {empresa} | {data_inicio:%Y-%m-%d} até {data_fim:%Y-%m-%d}")
 
         with ThreadPoolExecutor(max_workers=max_workers) as executor:
             futures = [executor.submit(coletar_pedidos_dia, dia, empresa) for dia in dias]
@@ -177,6 +178,17 @@ def coletar_mes_atual(empresas, max_workers=5):
         return pd.concat(frames, ignore_index=True)
 
     return pd.DataFrame()
+
+
+def definir_periodo_coleta(caminho_csv):
+    hoje = datetime.now()
+
+    if not os.path.exists(caminho_csv):
+        print("📚 CSV não existe. Fazendo carga histórica inicial desde 2025.")
+        return datetime(2025, 1, 1), hoje
+
+    print("📄 CSV já existe. Atualizando apenas o mês atual.")
+    return datetime(hoje.year, hoje.month, 1), hoje
 
 
 def preparar_dataframe(df, origem):
@@ -263,10 +275,17 @@ def run_pipeline():
     for nome_grupo, config in GRUPOS.items():
         print(f"\n🔎 Processando grupo: {nome_grupo}")
 
-        df_mes = coletar_mes_atual(config["empresas"])
-        df_mes = preparar_dataframe(df_mes, config["origem"])
+        data_inicio, data_fim = definir_periodo_coleta(config["arquivo"])
 
-        atualizar_historico_csv(df_mes, config["arquivo"])
+        df_periodo = coletar_periodo(
+            config["empresas"],
+            data_inicio,
+            data_fim,
+        )
+
+        df_periodo = preparar_dataframe(df_periodo, config["origem"])
+
+        atualizar_historico_csv(df_periodo, config["arquivo"])
 
     print("\n🏁 Finalizado com sucesso")
 
