@@ -5,15 +5,18 @@ import requests
 import pandas as pd
 
 from datetime import datetime, timedelta
+from calendar import monthrange
 from concurrent.futures import ThreadPoolExecutor, as_completed
 
 
 API_BASE = "https://api.sigecloud.com.br/request/Pedidos/Pesquisar"
 
+DATA_INICIO_HISTORICO = datetime(2025, 1, 1)
+
 GRUPOS = {
     "barra": {
         "origem": "GRUPO_BARRA",
-        "arquivo": "dados/pedidos_barra.csv",
+        "pasta": "dados/barra",
         "empresas": [
             "CASA DE SUCO - BARRA DO CORDA",
             "EMPORIO MIX",
@@ -23,7 +26,7 @@ GRUPOS = {
     },
     "itz": {
         "origem": "GRUPO_ITZ",
-        "arquivo": "dados/pedidos_itz.csv",
+        "pasta": "dados/itz",
         "empresas": [
             "PDV ITZ 01",
             "PDV ITZ 02",
@@ -151,19 +154,14 @@ def coletar_pedidos_dia(dia, empresa):
     return df_dia
 
 
-def coletar_periodo(empresas, data_inicio, data_fim, max_workers=5):
-    dias = []
-    dia_atual = datetime(data_inicio.year, data_inicio.month, data_inicio.day)
-    data_fim = datetime(data_fim.year, data_fim.month, data_fim.day)
-
-    while dia_atual <= data_fim:
-        dias.append(dia_atual)
-        dia_atual += timedelta(days=1)
+def coletar_mes(ano, mes, empresas, max_workers=5):
+    ultimo_dia = monthrange(ano, mes)[1]
+    dias = [datetime(ano, mes, d) for d in range(1, ultimo_dia + 1)]
 
     frames = []
 
     for empresa in empresas:
-        print(f"📅 Coletando {empresa} | {data_inicio:%Y-%m-%d} até {data_fim:%Y-%m-%d}")
+        print(f"📅 Coletando {empresa} | {mes:02d}/{ano}")
 
         with ThreadPoolExecutor(max_workers=max_workers) as executor:
             futures = [executor.submit(coletar_pedidos_dia, dia, empresa) for dia in dias]
@@ -178,17 +176,6 @@ def coletar_periodo(empresas, data_inicio, data_fim, max_workers=5):
         return pd.concat(frames, ignore_index=True)
 
     return pd.DataFrame()
-
-
-def definir_periodo_coleta(caminho_csv):
-    hoje = datetime.now()
-
-    if not os.path.exists(caminho_csv):
-        print("📚 CSV não existe. Fazendo carga histórica inicial desde 2025.")
-        return datetime(2025, 1, 1), hoje
-
-    print("📄 CSV já existe. Atualizando apenas o mês atual.")
-    return datetime(hoje.year, hoje.month, 1), hoje
 
 
 def preparar_dataframe(df, origem):
@@ -222,21 +209,25 @@ def preparar_dataframe(df, origem):
     return df
 
 
+def caminho_csv_mensal(pasta, ano, mes):
+    return os.path.join(pasta, f"{ano}-{mes:02d}.csv")
+
+
 def ler_csv_antigo(caminho):
     if not os.path.exists(caminho):
-        print(f"📄 CSV ainda não existe: {caminho}")
+        print(f"📄 CSV mensal ainda não existe: {caminho}")
         return pd.DataFrame()
 
     try:
         df = pd.read_csv(caminho, sep=";", encoding="utf-8-sig", dtype=str)
-        print(f"📚 Histórico lido: {caminho} | {len(df)} linhas")
+        print(f"📚 CSV mensal lido: {caminho} | {len(df)} linhas")
         return df
     except Exception as e:
-        print(f"⚠️ Erro ao ler histórico {caminho}: {e}")
+        print(f"⚠️ Erro ao ler CSV mensal {caminho}: {e}")
         return pd.DataFrame()
 
 
-def atualizar_historico_csv(df_novo, caminho):
+def salvar_csv_mensal(df_novo, caminho):
     os.makedirs(os.path.dirname(caminho), exist_ok=True)
 
     df_antigo = ler_csv_antigo(caminho)
@@ -263,11 +254,44 @@ def atualizar_historico_csv(df_novo, caminho):
         sep=";",
     )
 
-    print(f"✅ CSV atualizado: {caminho} | {len(df_final)} linhas")
+    tamanho_mb = os.path.getsize(caminho) / (1024 * 1024)
+
+    print(
+        f"✅ CSV mensal atualizado: {caminho} | "
+        f"{len(df_final)} linhas | {tamanho_mb:.2f} MB"
+    )
+
+
+def meses_para_processar(pasta):
+    hoje = datetime.now()
+    meses = []
+
+    existe_algum_csv = os.path.exists(pasta) and any(
+        arquivo.endswith(".csv") for arquivo in os.listdir(pasta)
+    )
+
+    if not existe_algum_csv:
+        print("📚 Nenhum CSV mensal encontrado. Fazendo carga histórica inicial desde 2025.")
+
+        ano = DATA_INICIO_HISTORICO.year
+        mes = DATA_INICIO_HISTORICO.month
+
+        while (ano < hoje.year) or (ano == hoje.year and mes <= hoje.month):
+            meses.append((ano, mes))
+
+            mes += 1
+            if mes == 13:
+                mes = 1
+                ano += 1
+
+        return meses
+
+    print("📄 CSVs mensais já existem. Atualizando apenas o mês atual.")
+    return [(hoje.year, hoje.month)]
 
 
 def run_pipeline():
-    print("🚀 Iniciando geração dos CSVs históricos para Power BI")
+    print("🚀 Iniciando geração dos CSVs mensais para Power BI")
 
     if not testar_token():
         raise RuntimeError("Token inválido ou API indisponível.")
@@ -275,17 +299,23 @@ def run_pipeline():
     for nome_grupo, config in GRUPOS.items():
         print(f"\n🔎 Processando grupo: {nome_grupo}")
 
-        data_inicio, data_fim = definir_periodo_coleta(config["arquivo"])
+        pasta = config["pasta"]
+        meses = meses_para_processar(pasta)
 
-        df_periodo = coletar_periodo(
-            config["empresas"],
-            data_inicio,
-            data_fim,
-        )
+        for ano, mes in meses:
+            print(f"\n🗓️ Processando {nome_grupo} | {ano}-{mes:02d}")
 
-        df_periodo = preparar_dataframe(df_periodo, config["origem"])
+            df_mes = coletar_mes(
+                ano=ano,
+                mes=mes,
+                empresas=config["empresas"],
+            )
 
-        atualizar_historico_csv(df_periodo, config["arquivo"])
+            df_mes = preparar_dataframe(df_mes, config["origem"])
+
+            caminho = caminho_csv_mensal(pasta, ano, mes)
+
+            salvar_csv_mensal(df_mes, caminho)
 
     print("\n🏁 Finalizado com sucesso")
 
