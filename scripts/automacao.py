@@ -10,8 +10,11 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 
 
 API_BASE = "https://api.sigecloud.com.br/request/Pedidos/Pesquisar"
-
 DATA_INICIO_HISTORICO = datetime(2025, 1, 1)
+
+GITHUB_REPOSITORY = os.getenv("GITHUB_REPOSITORY", "jaironrodrigo77-dotcom/etl-sigecloud")
+GITHUB_BRANCH = os.getenv("GITHUB_REF_NAME", "master")
+RAW_BASE_URL = f"https://raw.githubusercontent.com/{GITHUB_REPOSITORY}/{GITHUB_BRANCH}"
 
 GRUPOS = {
     "barra": {
@@ -142,10 +145,7 @@ def coletar_pedidos_dia(dia, empresa):
 
         hora_inicio = hora_fim + timedelta(seconds=1)
 
-    if frames:
-        df_dia = pd.concat(frames, ignore_index=True)
-    else:
-        df_dia = pd.DataFrame()
+    df_dia = pd.concat(frames, ignore_index=True) if frames else pd.DataFrame()
 
     if "ID" in df_dia.columns:
         df_dia = df_dia.drop_duplicates(subset=["ID"])
@@ -172,10 +172,7 @@ def coletar_mes(ano, mes, empresas, max_workers=5):
                     df["Empresa"] = empresa
                     frames.append(df)
 
-    if frames:
-        return pd.concat(frames, ignore_index=True)
-
-    return pd.DataFrame()
+    return pd.concat(frames, ignore_index=True) if frames else pd.DataFrame()
 
 
 def preparar_dataframe(df, origem):
@@ -238,21 +235,14 @@ def salvar_csv_mensal(df_novo, caminho):
         df_final = df_antigo.copy()
     else:
         todas_colunas = list(dict.fromkeys(list(df_antigo.columns) + list(df_novo.columns)))
-
         df_antigo = df_antigo.reindex(columns=todas_colunas, fill_value="")
         df_novo = df_novo.reindex(columns=todas_colunas, fill_value="")
-
         df_final = pd.concat([df_antigo, df_novo], ignore_index=True)
 
     if not df_final.empty and "ID_UNICO" in df_final.columns:
         df_final = df_final.drop_duplicates(subset=["ID_UNICO"], keep="last")
 
-    df_final.to_csv(
-        caminho,
-        index=False,
-        encoding="utf-8-sig",
-        sep=";",
-    )
+    df_final.to_csv(caminho, index=False, encoding="utf-8-sig", sep=";")
 
     tamanho_mb = os.path.getsize(caminho) / (1024 * 1024)
 
@@ -262,12 +252,54 @@ def salvar_csv_mensal(df_novo, caminho):
     )
 
 
+def criar_index_csv(pasta, nome_grupo):
+    arquivos = []
+
+    if not os.path.exists(pasta):
+        return
+
+    for arquivo in sorted(os.listdir(pasta)):
+        if not arquivo.endswith(".csv"):
+            continue
+
+        if arquivo == "index.csv":
+            continue
+
+        ano_mes = arquivo.replace(".csv", "")
+        caminho_relativo = f"{pasta}/{arquivo}".replace("\\", "/")
+        url = f"{RAW_BASE_URL}/{caminho_relativo}"
+
+        arquivos.append(
+            {
+                "Grupo": nome_grupo,
+                "AnoMes": ano_mes,
+                "Arquivo": arquivo,
+                "Caminho": caminho_relativo,
+                "Url": url,
+            }
+        )
+
+    df_index = pd.DataFrame(arquivos)
+
+    caminho_index = os.path.join(pasta, "index.csv")
+
+    df_index.to_csv(
+        caminho_index,
+        index=False,
+        encoding="utf-8-sig",
+        sep=";",
+    )
+
+    print(f"📌 Index atualizado: {caminho_index} | {len(df_index)} arquivos")
+
+
 def meses_para_processar(pasta):
     hoje = datetime.now()
     meses = []
 
     existe_algum_csv = os.path.exists(pasta) and any(
-        arquivo.endswith(".csv") for arquivo in os.listdir(pasta)
+        arquivo.endswith(".csv") and arquivo != "index.csv"
+        for arquivo in os.listdir(pasta)
     )
 
     if not existe_algum_csv:
@@ -316,6 +348,8 @@ def run_pipeline():
             caminho = caminho_csv_mensal(pasta, ano, mes)
 
             salvar_csv_mensal(df_mes, caminho)
+
+        criar_index_csv(pasta, nome_grupo)
 
     print("\n🏁 Finalizado com sucesso")
 
