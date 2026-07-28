@@ -1,6 +1,7 @@
 import os
 import json
 import time
+import random
 import requests
 import pandas as pd
 
@@ -47,6 +48,90 @@ HEADERS = {
 }
 
 
+# ============================================================
+# CONFIGURAÇÕES DE RESILIÊNCIA DA API
+# ============================================================
+
+MAX_TENTATIVAS_API = 5
+ESPERA_BASE_SEGUNDOS = 5
+STATUS_RETRY = {429, 500, 502, 503, 504}
+
+
+def requisicao_get_com_retry(params, timeout=180, contexto="API", max_tentativas=MAX_TENTATIVAS_API):
+    """
+    Executa GET na API com novas tentativas para falhas temporárias de conexão,
+    timeout, rate limit (429) e erros 5xx.
+
+    Erros permanentes (ex.: 400, 401, 403, 404) são retornados imediatamente
+    para que a rotina chamadora trate normalmente.
+    """
+    ultima_excecao = None
+
+    for tentativa in range(1, max_tentativas + 1):
+        try:
+            resp = requests.get(
+                API_BASE,
+                headers=HEADERS,
+                params=params,
+                timeout=timeout,
+            )
+
+            # Erros temporários do servidor / rate limit:
+            # tenta novamente antes de devolver a resposta.
+            if resp.status_code in STATUS_RETRY:
+                if tentativa == max_tentativas:
+                    return resp
+
+                retry_after = resp.headers.get("Retry-After")
+                try:
+                    espera = float(retry_after) if retry_after else None
+                except (TypeError, ValueError):
+                    espera = None
+
+                if espera is None:
+                    # Backoff exponencial: 5s, 10s, 20s, 40s...
+                    espera = ESPERA_BASE_SEGUNDOS * (2 ** (tentativa - 1))
+                    # Pequeno jitter para evitar que várias threads repitam juntas.
+                    espera += random.uniform(0, 2)
+
+                print(
+                    f"⚠️ {contexto} | HTTP {resp.status_code} | "
+                    f"tentativa {tentativa}/{max_tentativas}. "
+                    f"Nova tentativa em {espera:.1f}s."
+                )
+                time.sleep(espera)
+                continue
+
+            return resp
+
+        except (
+            requests.exceptions.ConnectionError,
+            requests.exceptions.Timeout,
+        ) as erro:
+            ultima_excecao = erro
+
+            if tentativa == max_tentativas:
+                break
+
+            espera = ESPERA_BASE_SEGUNDOS * (2 ** (tentativa - 1))
+            espera += random.uniform(0, 2)
+
+            print(
+                f"⚠️ {contexto} | falha de conexão/timeout | "
+                f"tentativa {tentativa}/{max_tentativas}: {erro}"
+            )
+            print(f"⏳ Nova tentativa em {espera:.1f}s...")
+            time.sleep(espera)
+
+        except requests.exceptions.RequestException as erro:
+            # Outros erros da biblioteca requests não devem ficar em loop.
+            raise RuntimeError(f"{contexto} | erro HTTP não recuperável: {erro}") from erro
+
+    raise requests.exceptions.ConnectionError(
+        f"{contexto} | API indisponível após {max_tentativas} tentativas."
+    ) from ultima_excecao
+
+
 def testar_token():
     params = {
         "dataInicial": "2025-01-01",
@@ -56,7 +141,12 @@ def testar_token():
         "limite": 1,
     }
 
-    resp = requests.get(API_BASE, headers=HEADERS, params=params, timeout=30)
+    resp = requisicao_get_com_retry(
+        params=params,
+        timeout=30,
+        contexto="Teste de token",
+        max_tentativas=3,
+    )
 
     if resp.status_code != 200:
         print(resp.text)
@@ -92,7 +182,14 @@ def coletar_pedidos_intervalo(start, end, empresa):
             "limite": limite,
         }
 
-        resp = requests.get(API_BASE, headers=HEADERS, params=params, timeout=180)
+        resp = requisicao_get_com_retry(
+            params=params,
+            timeout=180,
+            contexto=(
+                f"{empresa} | {start:%Y-%m-%d %H:%M:%S} "
+                f"até {end:%Y-%m-%d %H:%M:%S} | página {pagina}"
+            ),
+        )
 
         if resp.status_code != 200:
             print(f"⚠️ Erro {resp.status_code} | {empresa} | {start} até {end}")
@@ -154,7 +251,7 @@ def coletar_pedidos_dia(dia, empresa):
     return df_dia
 
 
-def coletar_mes(ano, mes, empresas, max_workers=5):
+def coletar_mes(ano, mes, empresas, max_workers=3):
     ultimo_dia = monthrange(ano, mes)[1]
     dias = [datetime(ano, mes, d) for d in range(1, ultimo_dia + 1)]
 
