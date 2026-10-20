@@ -26,7 +26,7 @@ GRUPOS = {
             "EMPORIO MIX",
             "PDV ALTAMIRA",
             "TRIZIDELA DO VALE - CSM MIX",
-            "Cs cobrancas",
+            "CS COBRANCAS",
         ],
     },
     "itz": {
